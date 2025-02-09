@@ -5,11 +5,14 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 )
 
 const (
-	targetHost = "https://smooth.fly.dev"
-	proxyPort  = ":8080"
+	targetHost          = "https://smooth.fly.dev"
+	proxyHost          = "smooth-proxy.fly.dev"
+	originalTargetHost  = "smooth.fly.dev"
+	proxyPort          = ":8080"
 )
 
 func main() {
@@ -22,7 +25,7 @@ func main() {
 	// Create a reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
-	// Store the default director
+	// Store the default director and modifier
 	defaultDirector := proxy.Director
 
 	// Create a custom director that will modify the request
@@ -39,6 +42,21 @@ func main() {
 
 		// Set the host to match the target
 		req.Host = target.Host
+	}
+
+	// Add a custom response modifier
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		// Check if this is a redirect response (3xx status code)
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			location := resp.Header.Get("Location")
+			if location != "" {
+				// Replace the host in the Location header
+				newLocation := strings.Replace(location, originalTargetHost, proxyHost, 1)
+				resp.Header.Set("Location", newLocation)
+				log.Printf("Rewrote Location header from %s to %s", location, newLocation)
+			}
+		}
+		return nil
 	}
 
 	// Create a handler that logs requests
